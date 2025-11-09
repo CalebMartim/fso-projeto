@@ -4,16 +4,21 @@
 #include "stdlib.h"
 #include "process.h"
 
+typedef struct Node {
+    Process *proc;
+    Node *nxt;
+} Node;
+
 typedef struct Queue {
     int size;
-    Process *front;
-    Process *back;
+    Node *front;
+    Node *back;
 } Queue;
 
-Queue* new_queue(int p) {
+Queue* new_queue() {
     Queue* q = (Queue*) malloc(sizeof(Queue));
 
-    if(q == NULL) return NULL;
+    if (q == NULL) return NULL;
 
     q->size = 0;
     q->front = q->back = NULL;
@@ -22,12 +27,17 @@ Queue* new_queue(int p) {
 }
 
 int enqueue(Queue *q, Process* process) {
-    if(q == NULL) return 1;
+    if (q == NULL) return 1;
 
-    if(q->size == 0) q->front = q->back = process;
+    Node* no = (Node*) malloc(sizeof(Node));
+    if (no == NULL) return 1;
+    no->proc = process;
+    no->nxt = NULL;
+
+    if (q->size == 0) q->front = q->back = no;
     else {
-        q->back->nxt = process;
-        q->back = process;
+        q->back->nxt = no;
+        q->back = no;
     }
 
     q->size++;
@@ -35,33 +45,34 @@ int enqueue(Queue *q, Process* process) {
     return 0;
 }
 
-int dequeue(Queue *q) {
-    if(q->size == 0) return 1;
+Process* dequeue(Queue *q) {
+    if (q->size == 0) return NULL;
 
+    Node* no = q->front;
     q->front = q->front->nxt;
     q->size--;
 
-    return 0;
+    Process* proc = no->proc;
+    free(no);
+
+    return proc;
 }
 
 void free_queue(Queue *q) {
-    Process *process = q->front;
-    while(process != NULL) {
-        Process* nxt = process->nxt;
-        free(process);
-        process = nxt;
+    Node *node = q->front;
+    while (node != NULL) {
+        Node* nxt = node->nxt;
+        Process* p = dequeue(q);
+        free(p);
+        node = nxt;
     }
 
     free(q);
     return;
 }
 
-int is_empty(Queue* q) {
+bool is_empty(Queue* q) {
     return (q->size == 0);
-}
-
-Process* front(Queue* q) {
-    return q->front;
 }
 
 #endif

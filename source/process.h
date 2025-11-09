@@ -2,27 +2,27 @@
 #define PROCESS_H
 
 #include "stdlib.h"
+#include "stdbool.h"
+#include "time.h"
 
 typedef struct Process {
     int pid;
-    int t;
+    time_t time_init;
     int priority;
-    int finished;
-    int turnaround;
-    struct Process *nxt;
+    int time_remaining;
+    long turnaround;
 } Process;
 
-Process* new_process(int pid, int t, int pr) {
-    Process* p = (Process*) malloc(sizeof(p));
+Process* new_process(int pid, int priority) {
+    Process* p = (Process*) malloc(sizeof(Process));
 
     if(p == NULL) return NULL;
 
     p->pid = pid;
-    p->t= t;
-    p->nxt = NULL;
-    p->priority = pr;
-    p->finished = 0;
+    p->time_init = time(NULL);
+    p->priority = priority;
     p->turnaround = 0;
+    p->time_remaining = 20; // Tempo de execução Completa do processo
     return p;
 }
 
