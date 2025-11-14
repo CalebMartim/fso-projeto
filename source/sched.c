@@ -35,7 +35,9 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    for (int i = 0; i < n; i++) round_robins[i] = new_queue();
+    for (int i = 0; i < n; i++) {
+        round_robins[i] = new_queue();
+    }
 
     /*TODO - logica do dettach da shm. Temos que dar shmdt toda vez que terminarmos de usar?*/
 
@@ -50,6 +52,15 @@ int main(int argc, char* argv[]) {
     // declaracao da struct mensagem
     mensagem mensagem_shed;
     mensagem_shed.pid = getpid();
+
+    /*Teste da troca de mensagens
+
+    printf("Scheduler: vou ler uma mensagem...\n");
+    msgrcv(msg_id, &mensagem_shed, sizeof(mensagem_shed), 0, 0);
+    printf("Mensagem recebida de 'main.c': %s\n", mensagem_shed.msg);
+    exit(0);
+    
+    */
 
     while (true) {
         for (int i = 0; i < n; ++i) {
