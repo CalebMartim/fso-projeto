@@ -22,84 +22,79 @@ https://youtu.be/yymyRBvD79A
 #include "process.h"
 #include "queue.h"
 
-
-
-// Header de funções auxiliares:
+// Header de funções e structs auxiliares:
 #include "aux.h"
 
-// Bibliotecas da shared memory
+// Bibliotecas de mecanismos de comunicacao
+#include "sys/types.h"
 #include "sys/ipc.h"
+
+// Biblioteca da shared memory
 #include "sys/shm.h"
+
+// Biblioteca de fila de mensagem
+#include "sys/msg.h"
 
 const char *exit_s = "exit_scheduler";
 const char *list_s = "list_scheduler";
 const char *exec_s = "execute_process";
 const char *user_s = "create_user_scheduler";
 
-int pid = 0;
+// Chaves unicas para a criacao das shms
+#define SHM_KEY_RR 0x1234
+#define SHM_KEY_FP 0x5678
+#define MSG_KEY 0x1233
 
-#define SHM_KEY 0x1234
-
-int pipeline[2]; // pipeline[0] : leitura ; pipeline[1] : escrita
-
-bool voltar_para_o_inicio = false;
-Queue* finished_processes;
-Queue* round_robins[3];
-
-void tratamento() {
-  char* mensagem;
-  read(pipeline[0], mensagem, sizeof(mensagem));
-  int pr = string_to_int(mensagem);
-  Process *p = new_process(++pid, pr);
-
-  enqueue(round_robins[pr], p);
-}
-
-void scheduler(int n) {
-  for (int i = 0; i < n; i++) round_robins[i] = new_queue();
-
-  while (true) {
-    for (int i = 0; i < n; ++i) {
-      // Sinal para matar schedular
-      
-      if (voltar_para_o_inicio) {
-        voltar_para_o_inicio = false;
-        i = -1;
-        continue;
-      }
-
-      if (is_empty(round_robins[i])) continue;
-
-      // Processa o cara no início
-      Process *p = dequeue(round_robins[i]);
-      sleep(5); // quantum de 5s
-      p->time_remaining -= 5;
-      if (p->time_remaining == 0) {
-        enqueue(finished_processes, p);
-      } else {
-        enqueue(round_robins[i], p);
-      }
-
-      if (!is_empty(round_robins[i])) i -= 1;
-    }
-  }
-}
+int pid_sched;  // pid do sched para mandar mensagens
 
 int main(){
   char command[100];
 
   // Cria a shared memory para o array de filas round-robin:
-  long tamanho_round_robin = sizeof(round_robins);
-  int shmid = shmget(SHM_KEY, tamanho_round_robin, IPC_CREAT | 0777);
-  // TODO: tratar erro de criação de memória compart
+  long tamanho_round_robin = sizeof(Queue) * 3;
+  int shm_id_round_robins = shmget(SHM_KEY_RR, tamanho_round_robin, IPC_CREAT | 0777);
+  if(shm_id_round_robins < 0) {
+    fprintf(stderr, "Erro: falha ao criar shm: array de filas round-robin.\n");
+    exit(EXIT_FAILURE);
+  }
+  
+  // Cria a shared memory para a fila de processos finalizados
+  long tamanho_finished_processes = sizeof(Queue);
+  int shm_id_finished_processes = shmget(SHM_KEY_FP, tamanho_finished_processes, IPC_CREAT | 0777);
+  if(shm_id_finished_processes < 0) { 
+    fprintf(stderr, "Erro: falha ao criar shm: fila de processos finalizados.\n");
 
-  // Cria o pipeline
-  pipe(pipeline);
+    // frees necessarios
+    shmclt(shm_id_round_robins, IPC_RMID);  // free nas filas round-robin
+
+    exit(EXIT_FAILURE);
+  }
+
+  // Cria a fila de mensagens
+  int msg_id = msgget(MSG_KEY, IPC_CREAT | 0777);
+  if(msg_id < 0) {
+    fprintf(strerror, "Erro: falha ao criar a fila de mensagens.\n");
+      
+    // frees necessarios
+    shmclt(shm_id_round_robins, IPC_RMID);  // free nas filas round-robin
+    shmclt(shm_id_finished_processes, IPC_RMID);  // free na fila de processos finalizados
+    exit(EXIT_FAILURE);
+  }
+
+  // declaracao da struct mensagem
+  mensagem mensagem_main;
+  mensagem_main.pid = getpid();
 
   while (true) {
     printf(">shell_sched: ");
     if(fgets(command, sizeof(command), stdin) == NULL) { // fgets le toda a linha
       fprintf(stderr, "Erro: falha ao ler o comando.\n");
+
+      // frees necessarios
+      shmclt(shm_id_round_robins, IPC_RMID);  // free nas filas round-robin
+      shmclt(shm_id_finished_processes, IPC_RMID);  // free na fila de processos finalizados
+      msgctl(msg_id, IPC_RMID, NULL); // free na fila de mensagens
+
       exit(EXIT_FAILURE);
     }
     command[strcspn(command, "\n")] = '\0'; // remove o '\n'
@@ -116,11 +111,29 @@ int main(){
     char *token = strtok(command, " ");
     if(token != NULL) {
       if(strcmp(token, user_s) == 0) {
-        int n = string_to_int(strtok(NULL, " ")); // numero de filas
+        char* n = strtok(NULL, " "); // numero de filas
 
-        int pid = fork();
-        if (pid == 0) {
-          scheduler(n);
+        // salva o pid do sched
+        pid_sched = fork();
+        if (pid_sched == 0) {
+
+          // Casting para char* das ids
+          char arg_shm_id_rr[20], arg_shm_id_fp[20], arg_msg[20];
+          sprintf(arg_shm_id_rr,"%d",shm_id_round_robins);
+          sprintf(arg_shm_id_fp,"%d",shm_id_finished_processes);
+          sprintf(arg_msg,"%d",msg_id);
+
+          // chama o executavel do "sched.c"
+          execl("sched","shed",n,arg_shm_id_rr,arg_shm_id_fp,arg_msg,NULL);
+
+          fprintf(stderr, "Erro: falha ao executar o comando 'execl'.\n");
+          
+          // frees necessarios
+          shmclt(shm_id_round_robins, IPC_RMID);  // free nas filas round-robin
+          shmclt(shm_id_finished_processes, IPC_RMID);  // free na fila de processos finalizados
+          msgctl(msg_id, IPC_RMID, NULL); // free na fila de mensagens
+
+          exit(EXIT_FAILURE);
         }
 
         continue;
@@ -129,18 +142,29 @@ int main(){
         char* pr = strtok(NULL, " "); // prioridade
         /*TODO - mandar pro processo filho as infos do novo processo a ser escalonado*/
 
-        write(pipeline[0], pr, sizeof(pr));
+        /*TODO - corrigir essa parte
+        
         voltar_para_o_inicio = true;
+        
+        */
 
         continue;
       }
     }
     fprintf(stderr,"Erro: Comando não definido.\n");
+
+    // frees necessarios
+    shmclt(shm_id_round_robins, IPC_RMID);  // free nas filas round-robin
+    shmclt(shm_id_finished_processes, IPC_RMID);  // free na fila de processos finalizados
+    msgctl(msg_id, IPC_RMID, NULL); // free na fila de mensagens
+
     exit(EXIT_FAILURE); // exit(1) | return 1
   }
-  /*TODO - frees necessarios*/
 
-  shmclt(shmid, IPC_RMID);  // free shm
+  /*TODO - frees necessarios*/
+  shmclt(shm_id_round_robins, IPC_RMID);  // free nas filas round-robin
+  shmclt(shm_id_finished_processes, IPC_RMID);  // free na fila de processos finalizados
+  msgctl(msg_id, IPC_RMID, NULL); // free na fila de mensagens
 
   return EXIT_SUCCESS; // return 0
 }
