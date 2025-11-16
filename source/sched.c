@@ -13,45 +13,63 @@
 #include "sys/types.h"
 #include "sys/ipc.h"
 
-// Biblioteca da shared memory
-#include "sys/shm.h"
-
 // Biblioteca de fila de mensagem
 #include "sys/msg.h"
 
-int pid = 0;
-bool voltar_para_o_inicio = false;
+// Biblioteca de sinais
+#include "signal.h"
+
+/*TODO - corrigir essa parte
+
+bool voltar_para_o_inicio = false;  
+
+*/
+int n;                              // numero de filas round-robins
+
+Queue* round_robins[3];
+Queue* finished_processes;
+
+// declaracao da struct mensagem
+mensagem mensagem_shed;
+
+int msg_id;     // id da fila de mensagens
+
+// exit_scheduler
+void exit_sched() {
+    /*TODO - enviar como mensagem para main os processos terminados e filas*/
+
+    for(int i = 0; i < n; i++) free_queue(round_robins[i]);
+    free_queue(finished_processes);
+}
+
+// list_scheduler
+void info_shed() {
+    /*TODO - enviar como mensagem as filas e o processo sendo executado no momento*/
+    strcpy(mensagem_shed.msg, "");  // limpa o buffer de mensagem
+
+}
+
+// execute_process
+void add_proc() {
+    /*TODO - criar processo e adicionar na fila*/
+    strcpy(mensagem_shed.msg, "");  // limpa o buffer de mensagem
+    msgrcv(msg_id, &mensagem_shed, sizeof(mensagem_shed), 0, 0);    // recebe a prioridade da main
+
+
+}
 
 int main(int argc, char* argv[]) {
-    int n = atoi(argv[1]);                          // numero de filas round-robins
-    int shm_id_round_robins = atoi(argv[2]);        // id da shm das filas roud-robins
-    int shm_id_finished_processes = atoi(argv[3]);  // id da shm da fila de precessos finalizados
-    int msg_id = atoi(argv[4]);                     // id da fila de mensagem
-
-    // le o ponteiro da array de filas round-robin
-    Queue** round_robins = (Queue**) shmat(shm_id_round_robins, (char*) 0, 0);
-    if(round_robins == (int *) -1) {
-        fprintf(stderr, "Erro: falha ao ler da memória compartilhada (attach).\n");
-        exit(EXIT_FAILURE);
-    }
-
-    for (int i = 0; i < n; i++) {
-        round_robins[i] = new_queue();
-    }
-
-    /*TODO - logica do dettach da shm. Temos que dar shmdt toda vez que terminarmos de usar?*/
-
-    Queue* finished_processes = (Queue*) shmat(shm_id_finished_processes, (char*) 0, 0);
-    if(finished_processes == (int*) -1) {
-        fprintf(stderr, "Erro: falha ao ler da memória compartilhada (attach).\n");
-        exit(EXIT_FAILURE);
-    }
-
-    /*TODO - logica do dettach da shm. Temos que dar shmdt toda vez que terminarmos de usar?*/
-
-    // declaracao da struct mensagem
-    mensagem mensagem_shed;
     mensagem_shed.pid = getpid();
+
+    n = atoi(argv[1]);                          // numero de filas round-robins
+    msg_id = atoi(argv[2]);                     // id da fila de mensagem
+
+    signal(SIGKILL, exit_sched);                // rotina de saida
+    signal(SIGUSR1, info_shed);                 // rotina de listar os processos
+    signal(SIGUSR2, add_proc);                  // rotina de adicionar novo processo
+
+    for (int i = 0; i < n; i++) round_robins[i] = new_queue();
+    finished_processes = new_queue();
 
     /*Teste da troca de mensagens
 
@@ -62,6 +80,9 @@ int main(int argc, char* argv[]) {
     
     */
 
+    while(true) {}
+   
+    /*TODO - corrigir essa parte
     while (true) {
         for (int i = 0; i < n; ++i) {
             // Sinal para matar scheduler
@@ -79,7 +100,6 @@ int main(int argc, char* argv[]) {
 
             sleep(4); // quantum de 4s
 
-            /*TODO - corrigir essa parte
             
             p->time_remaining -= 5;
             if (p->time_remaining == 0) {
@@ -90,7 +110,7 @@ int main(int argc, char* argv[]) {
 
             if (!is_empty(round_robins[i])) i -= 1;      
             
-            */
         }
     }
+    */
 }
