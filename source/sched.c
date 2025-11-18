@@ -24,9 +24,10 @@
 bool voltar_para_o_inicio = false;  
 
 */
+
 int n;                              // numero de filas round-robins
 
-Queue* round_robins[3];
+Queue** round_robins;
 Queue* finished_processes;
 
 // declaracao da struct mensagem
@@ -37,13 +38,18 @@ int msg_id;     // id da fila de mensagens
 // exit_scheduler
 void exit_sched() {
     /*TODO - enviar como mensagem para main os processos terminados e filas*/
+    
+    /*TODO - lembrar de dar kill nos processos nas filas*/
 
+    // frees necessarios
     for(int i = 0; i < n; i++) free_queue(round_robins[i]);
     free_queue(finished_processes);
+
+    free(round_robins);
 }
 
 // list_scheduler
-void info_shed() {
+void info_sched() {
     /*TODO - enviar como mensagem as filas e o processo sendo executado no momento*/
     strcpy(mensagem_shed.msg, "");  // limpa o buffer de mensagem
 
@@ -55,7 +61,19 @@ void add_proc() {
     strcpy(mensagem_shed.msg, "");  // limpa o buffer de mensagem
     msgrcv(msg_id, &mensagem_shed, sizeof(mensagem_shed), 0, 0);    // recebe a prioridade da main
 
+    int pid_new_process = fork();
+    if(pid_new_process == 0) {
+        Process* proc = (Process*) malloc(sizeof(Process));
+        proc->pid = pid_new_process;
+        proc->priority = atoi(mensagem_shed.msg);
+        enqueue(round_robins[proc->priority-1], proc);
 
+        execl("proc_exec","proc_exec");
+
+        fprintf(stderr, "Erro: falha ao executar o comando 'execl'.\n");
+    }
+
+    /*TODO - pensar como parar o filho*/
 }
 
 int main(int argc, char* argv[]) {
@@ -64,8 +82,10 @@ int main(int argc, char* argv[]) {
     n = atoi(argv[1]);                          // numero de filas round-robins
     msg_id = atoi(argv[2]);                     // id da fila de mensagem
 
+    round_robins = (Queue**) malloc(sizeof(Queue*) * n); // cria as arrays de filas rr
+
     signal(SIGKILL, exit_sched);                // rotina de saida
-    signal(SIGUSR1, info_shed);                 // rotina de listar os processos
+    signal(SIGUSR1, info_sched);                 // rotina de listar os processos
     signal(SIGUSR2, add_proc);                  // rotina de adicionar novo processo
 
     for (int i = 0; i < n; i++) round_robins[i] = new_queue();
