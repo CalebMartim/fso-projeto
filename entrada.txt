@@ -1,9 +1,0 @@
-create_user_scheduler 3
-execute_process 1
-execute_process 2
-execute_process 1
-execute_process 3
-execute_process 3
-execute_process 1
-execute_process 2
-list_scheduler
