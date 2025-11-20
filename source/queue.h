@@ -28,11 +28,14 @@ Queue* new_queue() {
     return q;
 }
 
+// Coloca as informações do processo na fila
 int push(Queue *q, Process* process) {
-    if (q == NULL) return 1;
+    if (process == NULL) return 1; // erro
+    if (q == NULL) return 1; // erro
 
     Node* no = (Node*) malloc(sizeof(Node));
-    if (no == NULL) return 1;
+    if (no == NULL) return 1; // erro
+
     no->proc = process;
     no->nxt = NULL;
 
@@ -43,12 +46,12 @@ int push(Queue *q, Process* process) {
     }
 
     q->size++;
-
     return 0;
 }
 
 // Retira o primeiro elemento da fila q
 Process* pop(Queue *q) {
+    if (q == NULL) return NULL; 
     if (q->size == 0) return NULL;
 
     Node* no = q->head;

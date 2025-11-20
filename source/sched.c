@@ -6,8 +6,7 @@
 #include "unistd.h"
 
 // Structs que organizam as informações dos processos
-// e filas round-robin
-#include "process.h"
+// e filas round-robin #include "process.h"
 #include "queue.h"
 
 // Header de funções auxiliares:
@@ -30,14 +29,14 @@ bool voltar_para_o_inicio = false;
 
 int n; // numero de filas round-robins
 
-Queue **round_robins;
-Queue *finished_processes;
+Queue **round_robins; // Filas do escalonador
+Queue *finished_processes; // Fila de processos finalizados
 
-// declaracao da struct mensagem
+// declaração da struct mensagem
 mensagem mensagem_sched;
 
 Process *processo_atual; // Manterá informações do processo sendo executado no momento
-Process *processo_default; // Um processo "dummy" que não faz nada
+bool process_running = false; // Variável booleana que diz se há um processo rodando ou não 
 
 int msg_id; // id da fila de mensagens
 
@@ -61,9 +60,9 @@ void exit_sched() {
   }
 
   // Processo atual:
-  if (processo_atual->pid != 2147483647) { // PID impossível na prática, isto verifica se há um processo atual sendo executado
+  if (process_running) { 
     printou_algo = true;
-    printf("Processo sendo executado: %d, prioridade: %d\n", processo_atual->pid, processo_atual->priority);
+    printf("Processo interrompido: %d, prioridade: %d\n", processo_atual->pid, processo_atual->priority);
   }
 
   bool all_vazio = true; // Verifica se todas as filas estão ou não vazias
@@ -98,12 +97,8 @@ void exit_sched() {
     free_queue(round_robins[i]); // Cada processo no escalonador
   free_queue(finished_processes); // Cada processo já finalizado
   free(round_robins); // Array que guardava as filas
-  if (processo_atual == processo_default)
+  if (process_running)
     free(processo_atual);
-  else {
-    free(processo_atual);
-    free(processo_default);
-  }
 
   exit(EXIT_SUCCESS);
 }
@@ -113,7 +108,7 @@ void info_sched() {
   bool printou_algo = false; // Usado apenas por questão de apresentação
 
   // Processo atual:
-  if (processo_atual->pid != 2147483647) {
+  if (process_running) {
     printou_algo = true;
     printf("\nProcesso sendo executado: %d, prioridade: %d\n", processo_atual->pid, processo_atual->priority);
   }
@@ -143,18 +138,27 @@ void info_sched() {
 // execute_process
 void add_proc() {
   strcpy(mensagem_sched.msg, ""); // limpa o buffer de mensagem
-  msgrcv(msg_id, &mensagem_sched, sizeof(mensagem_sched.msg), 0, 0); // recebe a prioridade da main
+  // recebe a prioridade do processo (enviada pela main)
+  msgrcv(msg_id, &mensagem_sched, sizeof(mensagem_sched.msg), 0, 0); 
 
   int pid_new_process = fork();
-  if (pid_new_process == 0) {
+  if (pid_new_process == 0) { // Processo filho 
     kill(getpid(), SIGSTOP); // espera receber SIGCONT
 
-    execl("bin/proc_exec", "proc_exec", (char *)0);
-
+    execl("bin/proc_exec", "proc_exec", (char *) 0);
     fprintf(stderr, "Erro: falha ao executar o comando 'execl'.\n");
-  } else {
+
+  } else {  // Processo pai
     Process *proc = new_process(pid_new_process, atoi(mensagem_sched.msg));
-    push(round_robins[proc->priority - 1], proc);
+
+    // Coloca as informações deste processo na sua devida fila round-robin:
+    int res = push(round_robins[proc->priority - 1], proc);
+    if (res) {
+      fprintf(stderr, "Erro ao colocar processo na fila round_robin\n");
+    }
+
+    // Para o escalonador verificar se este processo tem prioridade maior
+    // do que o que está sendo executado:
     voltar_para_o_inicio = true;
   }
 }
@@ -166,17 +170,28 @@ int main(int argc, char *argv[]) {
   msg_id = atoi(argv[2]); // id da fila de mensagem
 
   round_robins = (Queue **)malloc(sizeof(Queue *) * n); // cria os arrays de filas rr
-  processo_default = new_process(2147483647, -1);
-  processo_atual = processo_default;
+  //processo_default = new_process(2147483647, -1);
+  processo_atual = new_process(2147483647, -1);
 
   signal(SIGINT, (void *)exit_sched);  // rotina de saida
   signal(SIGUSR1, (void *)info_sched); // rotina de listar os processos
   signal(SIGUSR2, (void *)add_proc);   // rotina de adicionar novo processo
 
-  for (int i = 0; i < n; i++)
+  for (int i = 0; i < n; i++) {
     round_robins[i] = new_queue();
-  finished_processes = new_queue();
+    if (round_robins[i] == NULL) {
+      fprintf(stderr, "Erro em inicializar filas round robin. Finalizando escalonador\n");
+      kill(getpid(), SIGUSR1);
+    }
+  }
 
+  finished_processes = new_queue();
+  if (finished_processes == NULL) {
+    fprintf(stderr, "Erro em inicializar fila de processos finalizados. Finalizando escalonador\n");
+    kill(getpid(), SIGUSR1);
+  }
+
+  // Loop principal do escalonador
   while (true) {
     for (int pr = 0; pr < n; pr++) {
       if (voltar_para_o_inicio) {
@@ -188,7 +203,11 @@ int main(int argc, char *argv[]) {
       // executamos todos os processos de prioridade == pr
       if (!is_empty(round_robins[pr])) {
         processo_atual = pop(round_robins[pr]);
-        // printf("Processando %d\n", processo_atual->pid);
+        if (processo_atual == NULL) {
+          fprintf(stderr, "Falha em carregar processo para execução. Fechando escalonador\n");
+          kill(getpid(), SIGUSR1);
+        }
+        process_running = true;
 
         kill(processo_atual->pid, SIGCONT); // Acorda o processo_atual
 
@@ -198,22 +217,26 @@ int main(int argc, char *argv[]) {
           falta_dormir = sleep(falta_dormir);
         } while (falta_dormir);
 
-        int s;
-        int status = waitpid(processo_atual->pid, &s, WNOHANG);
+        // Status do processo após o quantum
+        int status = waitpid(processo_atual->pid, (int*)0, WNOHANG);
 
-        if (status == processo_atual->pid) {
-          // printf("Processo %d finalizado\n", processo_atual->pid);
-          processo_atual->turnaround = time(NULL) - processo_atual->time_init;
-          push(finished_processes, processo_atual); // processo terminou
-
-          processo_atual = processo_default;
-        } else {
+        if (status == processo_atual->pid) { // O processo terminou a sua execução
+          process_running = false;
+          processo_atual->turnaround = time(NULL) - processo_atual->time_init; // Cálculo do turnaround
+          int res = push(finished_processes, processo_atual); // Coloca na fila de processos finalizados
+          if (res) {
+            fprintf(stderr, "Erro ao colocar processo em finished_processes\n");
+          }
+        } else { // O processo ainda não terminou a sua execução
           kill(processo_atual->pid, SIGSTOP);     // para o processo
-          push(round_robins[pr], processo_atual); // coloca no final da fila
+          process_running = false;
+          int res = push(round_robins[pr], processo_atual); // coloca no final da fila
+          if (res) {
+            fprintf(stderr, "Erro ao colocar processo na fila round_robin\n");
+          }
         }
-
-        if (!is_empty(round_robins[pr]))
-          pr--; // permanece na prioridade pr na próxima iteração
+        if (!is_empty(round_robins[pr])) 
+          pr--; // Nermanece na prioridade pr na próxima iteração
       }
     }
   }

@@ -14,15 +14,22 @@ Ubuntu 24.04.3 LTS
 Kernel: 
 linux 6.14.0-33-generic
 
-COMPILAÇÃO:
+==================
+INSTRUÇÕES:
+
+Crie o diretório bin:
+mkdir bin
+
+Compile os programas:
 gcc -o bin/sched source/sched.c | gcc -o shell_sched source/main.c | gcc -o bin/proc_exec source/proc_exec.c
 
-EXECUÇÃO: 
+Execute o escalonador: 
 ./shell_sched
+==================
 
+Informações bônus:
 LOONA - [+ +]
-https://youtu.be/yymyRBvD79A
-
+Performance de inspiração: https://youtu.be/yymyRBvD79A
 */
 
 // Bibliotecas para funcionamento
