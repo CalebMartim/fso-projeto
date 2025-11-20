@@ -14,17 +14,37 @@ Ubuntu 24.04.3 LTS
 Kernel: 
 linux 6.14.0-33-generic
 
-==================
 INSTRUÇÕES:
-
-Crie o diretório bin:
+==================
+Garanta a existência do diretório bin:
 mkdir bin
 
 Compile os programas:
 gcc -o bin/sched source/sched.c | gcc -o shell_sched source/main.c | gcc -o bin/proc_exec source/proc_exec.c
 
-Execute o escalonador: 
+Inicialize a interface: 
 ./shell_sched
+
+Instruções para a interface:
+
+Inicialize o escalonador com
+>shell_sched: create_user_scheduler n
+onde n é o número de filas round-robin desejadas no escalonador
+(apenas um escalonador pode estar sendo executado por vez)
+
+Inicialize um novo processo no escalonador com 
+>shell_sched: execute_process pr
+onde pr é a prioridade do processo, um inteiro entre 1 e n
+
+Liste as informações dos processos carregados no escalonador com
+>shell_sched: list_scheduler
+
+Termine a execução do escalonador atual com 
+>shell_sched: exit_scheduler
+
+Saia da interface com
+>shell_sched: exit
+
 ==================
 
 Informações bônus:
